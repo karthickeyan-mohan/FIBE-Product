@@ -19,7 +19,10 @@
 /* Home Screen web app on iOS: the status bar style comes from this meta tag, read when the app opens.
    Dark theme: translucent status bar (white text) with the page running underneath, so backgrounds and the
    landing gradient continue behind it (screens add the inset via --sat in css/flows.css).
-   Light theme: the standard status bar (dark text), as white text would not show on the light screens. */
+   Light theme: the standard status bar (dark text), as white text would not show on the light screens.
+   iOS paints that standard bar with the page background, so the page background (and theme-color) follow
+   the colour at the top of the screen showing: white on the log-in steps, grey on the app, the green tint
+   on the first screen, dimmed while a drawer or popup is open. */
 (function(){
   var dark=false;
   try{ var s=JSON.parse(localStorage.getItem('fibe-prefs-v1')||'{}')||{};
@@ -27,7 +30,39 @@
     dark=t==='device'?!!(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches):t==='dark'; }catch(e){}
   var m=document.createElement('meta'); m.name='apple-mobile-web-app-status-bar-style'; m.content=dark?'black-translucent':'default';
   document.head.appendChild(m);
-  window.fibeStatusBar=function(mode){ m.content=mode==='dark'?'black-translucent':'default'; };
+  window.fibeStatusBar=function(mode){ m.content=mode==='dark'?'black-translucent':'default'; schedule(); };
+
+  /* colour at the top edge: composite the backgrounds of the elements stacked there, top-most last */
+  function rgba(c){
+    var x=/^rgba?\(([^)]+)\)/.exec(c), p;
+    if(x){ p=x[1].split(/[\s,\/]+/).filter(Boolean).map(parseFloat); return [p[0],p[1],p[2],p.length>3?p[3]:1]; }
+    x=/^color\(srgb ([^)]+)\)/.exec(c);
+    if(x){ p=x[1].split(/[\s\/]+/).filter(Boolean).map(parseFloat); return [p[0]*255,p[1]*255,p[2]*255,p.length>3?p[3]:1]; }
+    return null; }
+  function topColour(){
+    var app=document.getElementById('app'); if(!app||!document.elementsFromPoint) return null;
+    var y=1, els=document.elementsFromPoint(innerWidth/2,y), layers=[], i, el, cs, c, tint;
+    for(i=0;i<els.length;i++){ el=els[i]; if(el===document.body||el===document.documentElement) break;
+      cs=getComputedStyle(el);
+      tint=rgba(cs.getPropertyValue('--top-tint').trim());   /* a gradient at the top (first screen): its colour along the top edge */
+      if(tint){ layers.push(tint); break; }
+      c=rgba(cs.backgroundColor); if(!c||!c[3]) { if(el===app) break; continue; }
+      c[3]*=parseFloat(cs.opacity)||0; if(!c[3]) continue;
+      layers.push(c); if(c[3]>=1) break; if(el===app) break; }
+    if(!layers.length) return null;
+    var base=layers.pop(), out=[base[0],base[1],base[2]];
+    while(layers.length){ c=layers.pop(); out=[0,1,2].map(function(k){ return out[k]*(1-c[3])+c[k]*c[3]; }); }
+    return 'rgb('+out.map(Math.round).join(',')+')'; }
+  var tc=[].slice.call(document.querySelectorAll('meta[name="theme-color"]')), last='', raf=0, late=0;
+  function apply(){ raf=0; var c=topColour(); if(!c||c===last) return; last=c;
+    document.documentElement.style.backgroundColor=c; document.body&&(document.body.style.backgroundColor=c);
+    tc.forEach(function(t){ t.setAttribute('content',c); }); }
+  function schedule(){ if(!raf) raf=requestAnimationFrame(apply); clearTimeout(late); late=setTimeout(apply,400); }   /* again once fades / slides have finished */
+  window.fibeTopColour=schedule;
+  function start(){ var app=document.getElementById('app'); if(!app) return;
+    new MutationObserver(schedule).observe(app,{childList:true,subtree:true,attributes:true,attributeFilter:['class','data-mode','hidden','open']});
+    addEventListener('resize',schedule); schedule(); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
 })();
 
 </script>
@@ -645,7 +680,7 @@ body{font-family:"IBM Plex Sans Arabic","Noto Sans Arabic",system-ui,-apple-syst
   .shell.has-dock .main{padding-bottom:24px}
   /* plain CTAs on the page background; the white bar + top line appear only while content scrolls behind them */
   .shell > .fp-foot.docked{grid-column:1/-1; position:relative; z-index:5; margin:0; border-radius:0; background:transparent;
-    border-top:1px solid transparent; padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px)); transition:background-color .15s, border-top-color .15s}
+    border-top:1px solid transparent; padding:12px 16px max(12px, env(safe-area-inset-bottom,0px)); transition:background-color .15s, border-top-color .15s}
   .app .shell > .fp-foot.docked.more{background:var(--surface); border-top-color:var(--line)}
   .shell:not(.no-bar) > .fp-foot.docked{margin-bottom:var(--tb-space)}
 }
@@ -1192,7 +1227,7 @@ body{font-family:"IBM Plex Sans Arabic","Noto Sans Arabic",system-ui,-apple-syst
 .auth-cta{display:flex; flex-direction:column; gap:8px}
 .auth-cta .btn{width:100%; height:52px; font-size:1rem; line-height:1.5rem}
 @container app (max-width: 699px){
-  .auth-cta.dock{position:sticky; bottom:0; margin:auto -20px -28px; padding:12px 20px calc(16px + env(safe-area-inset-bottom,0px)); background:var(--surface); border-top:1px solid var(--divider); z-index:5}
+  .auth-cta.dock{position:sticky; bottom:0; margin:auto -20px -28px; padding:12px 20px max(16px, env(safe-area-inset-bottom,0px)); background:var(--surface); border-top:1px solid var(--divider); z-index:5}
   .app[data-mode="dark"] .auth-cta.dock{background:var(--bg)}
 }
 .quick-links{display:flex; justify-content:center; flex-wrap:wrap; gap:8px 24px; padding:16px 20px 20px}
@@ -2298,7 +2333,7 @@ body{font-family:"IBM Plex Sans Arabic","Noto Sans Arabic",system-ui,-apple-syst
 .fx-line{margin:8px 0 0; font-size:0.8125rem; color:var(--on-gold-soft); line-height:1.25rem}
 .fx-line:empty{display:none}
 /* international transfer: FX rates box under the amount */
-.fx-box{padding:16px; border:1px solid var(--line); border-radius:var(--r-md); background:var(--surface-2); font-size:0.875rem; line-height:1.375rem; color:var(--text)}
+.fx-box{padding:16px; border-radius:var(--r-md); background:var(--surface-2); font-size:0.875rem; line-height:1.375rem; color:var(--text)}
 .fx-box-t{margin:0 0 8px; font-weight:600}
 .fx-box dl{margin:0; display:grid; gap:4px}
 .fx-box dl>div{display:flex; flex-wrap:wrap; gap:0 4px}
@@ -2450,7 +2485,7 @@ body{font-family:"IBM Plex Sans Arabic","Noto Sans Arabic",system-ui,-apple-syst
 /* ABQ: a short quick-action row (2–3 tiles) keeps tile width and sits at the start */
 .tbl-x{overflow-x:auto}
 .res-amt{margin:4px 0 0; font-size:1.75rem; line-height:2.25rem; font-weight:600; color:var(--text)}
-.fx-timer{display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:12px 0 0; padding:12px 14px; border:1px solid var(--line); border-radius:var(--r-md); background:var(--surface-2); font-size:0.875rem}
+.fx-timer{display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:12px 0 0; padding:12px; border-radius:var(--r-md); background:var(--surface-2); font-size:0.875rem}
 .fx-timer small{flex-basis:100%}
 .fx-timer .err-txt{display:inline-flex; gap:6px; align-items:center; color:var(--neg)}
 .qa[aria-disabled="true"]{opacity:.55}
@@ -3848,12 +3883,7 @@ div.smb-acc-h{cursor:default}
 .smb-by-help{align-self:end; margin:0 0 12px}
 
 /* transaction management */
-.smb-mods{display:flex; gap:8px; overflow-x:auto; scrollbar-width:none; margin:0; padding-block:2px}
-.smb-mods::-webkit-scrollbar{display:none}
-.smb-mods .chip-b{flex:none; white-space:nowrap}
 
-.smb-hist{font-size:0.8125rem}
-.smb-hist td,.smb-hist th{white-space:nowrap}
 
 /* bulk payments */
 .bk-vbtn{align-self:flex-start}
@@ -3873,7 +3903,6 @@ div.smb-acc-h{cursor:default}
 .sh-body .smb-grp + .smb-grp{margin-top:8px}
 .smb-rule-f{display:flex; flex-direction:column; gap:12px}
 .smb-rule-f .btn.sm{align-self:flex-start}
-.smb-hist{min-width:600px}
 /* View workflow · Audit details (FIB gap): collapsible record of creation and modifications */
 .app .smb-audit{margin-top:20px; border-radius:var(--r-md); background:var(--surface-2); padding:0 16px}
 .app .smb-audit > summary{display:flex; align-items:center; gap:8px; min-height:48px; cursor:pointer; list-style:none; font-weight:600}
@@ -3886,6 +3915,20 @@ div.smb-acc-h{cursor:default}
 .app .smb-audit-l{list-style:none; margin:0; padding:0 0 16px; display:flex; flex-direction:column; gap:12px}
 .app .smb-audit-l li{display:flex; flex-direction:column; gap:2px; font-size:0.875rem; line-height:1.375rem}
 .app .smb-audit-l li + li{padding-top:12px; border-top:1px solid var(--divider)}
+/* transaction rows on phones: the amount moves under the details, so the details get the full width */
+@container app (max-width: 599px){
+  .app .lrow.smb-txr .lrow-b{grid-template-columns:auto minmax(0,1fr) auto; grid-template-areas:"ic t ch" "ic a ch"; row-gap:4px}
+  .app .lrow.smb-txr .lrow-b > .ic{grid-area:ic}
+  .app .lrow.smb-txr .lrow-t{grid-area:t}
+  .app .lrow.smb-txr .lrow-a{grid-area:a; text-align:start}
+  .app .lrow.smb-txr .lrow-ch{grid-area:ch}
+}
+.smb-mods{display:flex; gap:8px; overflow-x:auto; scrollbar-width:none; margin:0; padding-block:2px}
+.smb-mods::-webkit-scrollbar{display:none}
+.smb-mods .chip-b{flex:none; white-space:nowrap}
+/* workflow history timeline: a rejected / recalled / expired step has a red dot and line */
+.app .smb-hist li.neg .dot{background:var(--neg); border-color:var(--neg)}
+.app .smb-hist li.neg::before{background:var(--line)}
 
 /* css/abq-layout.css */
 /* ==========================================================================
@@ -4293,7 +4336,7 @@ html.kb-open .app .shell.has-dock .fp-foot.docked{position:sticky}
 .app .modal .mdl-ic .i{width:26px; height:26px}
 @container app (max-width: 699px){
   .app .modal-back{place-items:end stretch; padding:0}
-  .app .modal{width:100%; max-width:none; border-radius:var(--r-xl) var(--r-xl) 0 0; border-bottom:0; padding:24px 20px calc(20px + env(safe-area-inset-bottom,0px)); animation-name:mdl-up}
+  .app .modal{width:100%; max-width:none; border-radius:var(--r-xl) var(--r-xl) 0 0; border-bottom:0; padding:24px 20px max(20px, env(safe-area-inset-bottom,0px)); animation-name:mdl-up}
   .app .modal .acts{justify-content:stretch; margin-top:12px}
   .app .modal .acts .btn{flex:1 1 0; min-width:0; height:48px}
 }
@@ -4329,7 +4372,7 @@ html.kb-open .app .shell.has-dock .fp-foot.docked{position:sticky}
 .app .auth:not(.lg2) .auth-top{padding-inline:calc(var(--ag) - 8px)}
 .app .auth:not(.lg2) .auth-body{max-width:calc(416px + 2 * var(--ag)); padding:var(--at) var(--ag) var(--ab); justify-content:flex-start}
 .app .auth:not(.lg2) .auth-body.wide{max-width:calc(760px + 2 * var(--ag))}
-.app .auth:not(.lg2) .auth-cta.dock{position:sticky; bottom:0; z-index:5; margin:auto calc(-1 * var(--ag)) calc(-1 * var(--ab)); padding:12px var(--ag) calc(var(--ab) + env(safe-area-inset-bottom,0px)); background:var(--surface); border-top:1px solid transparent}
+.app .auth:not(.lg2) .auth-cta.dock{position:sticky; bottom:0; z-index:5; margin:auto calc(-1 * var(--ag)) calc(-1 * var(--ab)); padding:12px var(--ag) max(var(--ab), env(safe-area-inset-bottom,0px)); background:var(--surface); border-top:1px solid transparent}
 .app .auth:not(.lg2) .auth-cta.dock.more{border-top-color:var(--line)}
 .app[data-mode="dark"] .auth:not(.lg2) .auth-cta.dock{background:var(--bg)}
 /* first screen on desktop: the same 416px column as ABQ */
@@ -4544,6 +4587,13 @@ html.kb-open .app .shell.has-dock .fp-foot.docked{position:sticky}
 .app .auth:has(.lg-setpc) .auth-head p{line-height:1.375rem}
 .app .auth.pc-one .auth-head p{white-space:nowrap; font-size:min(0.875rem, min(100cqi - 2 * var(--ag,24px), 416px) / 31)}
 .app[dir="rtl"] .auth.pc-one .auth-head p{font-size:min(0.875rem, min(100cqi - 2 * var(--ag,24px), 416px) / 24.5)}
+/* colour along the top edge of the first screen's gradient (phones / tablets): the light status bar takes it (js/core/status-bar.js) */
+@container app (max-width: 899px){
+  .app .auth.lg2 .auth-pane{--top-tint:rgb(192,215,193)}
+  .app[data-mode="dark"] .auth.lg2 .auth-pane{--top-tint:rgb(14,48,21)}
+}
+/* dialogs take focus when they open (focusDialog in js/core/flow.js): no ring on the dialog box itself */
+.app :is([role="dialog"],[role="alertdialog"])[tabindex="-1"]:focus{outline:none}
 
 </style><!-- /build:css -->
 </head>
@@ -6186,6 +6236,7 @@ en:{
   menu:{tx:'Transaction management', users:'User management', wf:'Workflow management', bulk:'Bulk payments'},
   add:'Add', back:'Back', prev:'Previous', next:'Next', reset:'Reset', view:'View', modify:'Modify', actions:'Actions for {n}', done:'Done', close:'Close',
   byMe:'Added by me', byOthers:'Added by others', total:'{n} total', search:'Search', filter:'Filter', apply:'Apply', clear:'Reset', yes:'Yes', no:'No',
+  exp:{ dl:'Download', pdf:'PDF', csv:'CSV', excel:'Excel', none:'There is nothing to download.' },
   st:{active:'Active', locked:'Locked', blocked:'Blocked', blocked_permanently:'Blocked permanently', inactive:'Inactive', inProgress:'In progress'},
   receipt:'Confirmation receipt', ref:'Reference number', dateTime:'Date and time', home:'Home',
   /* users */
@@ -6241,6 +6292,7 @@ en:{
   /* transaction management */
   tm:{title:'Transaction management', tabs:{mine:'My approvals', pending:'Pending approvals', done:'Completed'}, sub:{approved:'Approved', closed:'Rejected, expired, recalled'},
     count:'{n} transactions', searchPh:'Reference, beneficiary, account or initiator', module:'Module',
+    f:{ acc:'Account', card:'Card', reqDate:'Requested', tfDate:'Transfer date', bene:'Beneficiary', biller:'Biller', init:'Initiated by' },
     mods:{all:'All', accounts:'Accounts', cards:'Cards', transfers:'Transfers', bene:'Beneficiary', payments:'Payments', bulk:'Bulk payments', other:'Common requests'},
     initiator:'Initiator name', debit:'Debit account number', type:'Transfer type', amount:'Amount', authLeft:'Authorization left', since:'Pending since', actionDate:{approved:'Approved date', closed:'Action date'}, status:'Transaction status',
     sts:{pending:'Pending for approval', successful:'Successful', approved:'Approved', rejected:'Rejected', expired:'Expired', recalled:'Recalled'},
@@ -6273,6 +6325,7 @@ ar:{
   sec:'الأعمال', secM:'خدمات الأعمال', bulkTab:'المدفوعات المجمعة',
   menu:{tx:'إدارة المعاملات', users:'إدارة المستخدمين', wf:'إدارة مسارات الاعتماد', bulk:'المدفوعات المجمعة'},
   add:'إضافة', back:'رجوع', prev:'السابق', next:'التالي', reset:'إعادة تعيين', view:'عرض', modify:'تعديل', actions:'إجراءات {n}', done:'تم', close:'إغلاق',
+  exp:{ dl:'تنزيل', pdf:'PDF', csv:'CSV', excel:'Excel', none:'لا يوجد ما يمكن تنزيله.' },
   byMe:'أضفتها أنا', byOthers:'أضافها آخرون', total:'الإجمالي {n}', search:'بحث', filter:'تصفية', apply:'تطبيق', clear:'إعادة تعيين', yes:'نعم', no:'لا',
   st:{active:'نشط', locked:'مقفل', blocked:'موقوف', blocked_permanently:'موقوف نهائيًا', inactive:'غير نشط', inProgress:'قيد المراجعة'},
   receipt:'إيصال التأكيد', ref:'الرقم المرجعي', dateTime:'التاريخ والوقت', home:'الرئيسية',
@@ -6325,6 +6378,7 @@ ar:{
     errMin:'أدخل حدًا أدنى صحيحًا للمبلغ', errMax:'لا يمكن أن يكون الحد الأقصى أقل من الحد الأدنى', errUser:'اختر معرّف مستخدم صحيحًا من الاقتراحات', errCount:'أدخل عددًا صحيحًا لاعتماد المجموعة', errRules:'لم يتم ضبط قواعد المسار بعد'},
   tm:{title:'إدارة المعاملات', tabs:{mine:'اعتماداتي', pending:'بانتظار الاعتماد', done:'المكتملة'}, sub:{approved:'المعتمدة', closed:'المرفوضة والمنتهية والمسحوبة'},
     count:'{n} معاملات', searchPh:'المرجع أو المستفيد أو الحساب أو المُنشئ', module:'الوحدة',
+    f:{ acc:'الحساب', card:'البطاقة', reqDate:'تاريخ الطلب', tfDate:'تاريخ التحويل', bene:'المستفيد', biller:'الجهة المفوترة', init:'أنشأها' },
     mods:{all:'الكل', accounts:'الحسابات', cards:'البطاقات', transfers:'التحويلات', bene:'المستفيدون', payments:'المدفوعات', bulk:'المدفوعات المجمعة', other:'طلبات عامة'},
     initiator:'اسم المُنشئ', debit:'رقم حساب الخصم', type:'نوع التحويل', amount:'المبلغ', authLeft:'الاعتمادات المتبقية', since:'معلقة منذ', actionDate:{approved:'تاريخ الاعتماد', closed:'تاريخ الإجراء'}, status:'حالة المعاملة',
     sts:{pending:'بانتظار الاعتماد', successful:'ناجحة', approved:'معتمدة', rejected:'مرفوضة', expired:'منتهية', recalled:'مسحوبة'},
@@ -7870,6 +7924,10 @@ defineEndpoint('smb.userResetPassword',{method:'POST',path:'/smb/users/{userId}/
   summary:'Send a password reset link / temporary password to the user\'s registered mobile and email. Not allowed for inactive or locked users. 202 OTP_REQUIRED → { reference, createdAt }.',
   errors:['RESET_NOT_ALLOWED','TEMP_PASSWORD_FAILED','DELIVERY_FAILED']});
 
+defineEndpoint('smb.usersExport',{method:'GET',path:'/smb/users/export',tag:'SMB · Users',query:['addedBy','status','format','lang'],responseType:'blob',
+  summary:'Users file for the tab on screen (UJ User Management Dashboard AC 4.g.i). addedBy = me | others; status = all | active | locked | blocked | blocked_permanently; format = excel | csv. Columns: User name, User ID, User role, Added on, Status.',
+  example:{params:{addedBy:'me',status:'all',format:'excel',lang:'en'}},errors:['NO_DATA']});
+
 /* ---------- user groups ---------- */
 defineEndpoint('smb.groups',{method:'GET',path:'/smb/user-groups',tag:'SMB · Groups',
   summary:'User groups: { items:[{ id, name, effectiveDate, enabled, users:[userId], addedBy: me|others, addedOn }] }. Only users with a checker role can be in a group.'});
@@ -7877,6 +7935,10 @@ defineEndpoint('smb.groupAdd',{method:'POST',path:'/smb/user-groups',tag:'SMB ·
   summary:'Create a group. Body: { name (≤32, unique), effectiveDate, enabled, users }. 202 OTP_REQUIRED → { reference, createdAt }.',errors:['GROUP_NAME_TAKEN','VALIDATION']});
 defineEndpoint('smb.groupUpdate',{method:'PUT',path:'/smb/user-groups/{groupId}',tag:'SMB · Groups',
   summary:'Modify a group. Same body as create. 202 OTP_REQUIRED → { reference, createdAt }.',errors:['GROUP_NAME_TAKEN','RECORD_IN_USE','VALIDATION']});
+
+defineEndpoint('smb.groupsExport',{method:'GET',path:'/smb/user-groups/export',tag:'SMB · Groups',query:['addedBy','format','lang'],responseType:'blob',
+  summary:'User groups file for the tab on screen (UJ Group Dashboard AC 7.a). addedBy = me | others; format = excel | csv. Columns: Group name, Members, Effective date, Status.',
+  example:{params:{addedBy:'me',format:'csv',lang:'en'}},errors:['NO_DATA']});
 
 /* ---------- workflows (approval matrix) ---------- */
 defineEndpoint('smb.workflows',{method:'GET',path:'/smb/workflows',tag:'SMB · Workflows',
@@ -7890,6 +7952,9 @@ defineEndpoint('smb.workflowUpdate',{method:'PUT',path:'/smb/workflows/{workflow
 /* ---------- transaction management (approvals) ---------- */
 defineEndpoint('smb.approvals',{method:'GET',path:'/smb/approvals',tag:'SMB · Approvals',query:['queue','from','to','service','q'],
   summary:'Approval queues (includes the business user\'s own donations: service donation, details [{ key: donation, value: { en, ar } }], status pending | successful | approved | rejected). queue = mine (waiting for my approval) | pending (approved by me / initiated by me, waiting for others) | approved | closed (rejected, expired, recalled). Newest 20 per page. { total, items:[{ id, reference, module, service, type {en,ar}, initiator, initiatedByMe, debitAccount, amount?, currency?, beneficiary?, biller?, cardNumber?, authLeft, pendingSince, expiresInDays, status, actionAt, lockedBy?, details:[{ label, value }], history:[{ at, action, stage, by }] }] }.'});
+defineEndpoint('smb.approvalsExport',{method:'GET',path:'/smb/approvals/export',tag:'SMB · Approvals',query:['queue','module','from','to','service','q','format','lang'],responseType:'blob',
+  summary:'Transaction summary file for the queue on screen, with the same filters as the list (UJs Pending with Me AC 13, Pending with Others AC 12, Completed AC 15). queue = mine | pending | approved | closed; module = all | accounts | cards | transfers | bene | payments | bulk | other; format = pdf | csv. Columns for module all: Initiator name, Debit account number, Transfer type, Amount, Currency, Transaction reference number; with a module, that module\'s fields from the UJ (accounts: reference, request type, account number, amount; cards: reference, request type, request date, card number; transfers: reference, transfer type, amount, transfer date, debit account, beneficiary; bene: reference, transfer type, beneficiary; payments: reference, request type, biller, amount, debit account; bulk: reference, transfer type, amount, debit account; other: reference, request type) + initiator name. Then Authorization left + Pending since (mine, pending; common requests: authorization left only) or Approved / action date + Transaction status (approved, closed).',
+  example:{params:{queue:'mine',format:'csv',lang:'en'}},errors:['NO_DATA']});
 defineEndpoint('smb.approvalAct',{method:'POST',path:'/smb/approvals/{approvalId}/actions',tag:'SMB · Approvals',
   summary:'Approve, reject or recall a transaction. Body: { action: approve|reject|recall, remarks (≤150) }. Recall only by the initiator. A transaction opened by another approver at the same level answers 409 RECORD_IN_USE. 202 OTP_REQUIRED with a soft token challenge (method "soft_token") → { reference, createdAt, status }.',
   errors:['RECORD_IN_USE','NOT_INITIATOR','EXPIRED','VALIDATION']});
@@ -11058,7 +11123,8 @@ const MOCK_AUTH={termsAccepted:false,kycUpdated:false,kycReview:false,wrongPass:
   Q.forEach(t=>{ if(!t.queue) t.queue='mine';
     const d=[]; if(t.donation) d.push(['donation',t.donation]); if(t.beneficiary) d.push(['beneficiary',t.beneficiary]); if(t.biller) d.push(['biller',t.biller]); if(t.cardNumber) d.push(['card',t.cardNumber]); if(t.fileName) d.push(['file',t.fileName]); if(t.transferDate) d.push(['date',t.transferDate]);
     t.details=d.map(([k,v])=>({key:k,value:v}));
-    t.history=hist(t.reference,[[t.queue==='mine'?1:3,'09:15','initiated','maker',t.initiator]].concat(t.queue==='pending'?[[1,'10:40','approved','level1','Karim Fathy']]:[]).concat(t.status==='approved'?[[0,'11:10','approved','level1','Ahmed Hassan']]:t.status==='rejected'?[[0,'17:20','rejected','level1','Ahmed Hassan']]:t.status==='recalled'?[[0,'10:05','recalled','maker','Ahmed Hassan']]:t.status==='expired'?[[0,'00:00','expired','system','System']]:[])); });
+    const initD=t.actionAt?Math.round((fromIso(D.BUSINESS_DATE)-fromIso(t.actionAt.slice(0,10)))/864e5)+1:t.queue==='mine'?1:3;   /* a completed transaction was initiated the day before its action */
+    t.history=hist(t.reference,[[initD,'09:15','initiated','maker',t.initiator]].concat(t.queue==='pending'?[[1,'10:40','approved','level1','Karim Fathy']]:[]).concat(t.status==='approved'?[[0,'11:10','approved','level1','Ahmed Hassan']]:t.status==='rejected'?[[0,'17:20','rejected','level1','Ahmed Hassan']]:t.status==='recalled'?[[0,'10:05','recalled','maker','Ahmed Hassan']]:t.status==='expired'?[[0,'00:00','expired','system','System']]:[])); });
   /* ---- Business Banking routing of a customer's own financial transaction (UJ Donations 33–34):
      an active workflow for the service and debit account whose amount rule matches → Pending approvals (status pending);
      no checker configured → processed and logged under Completed › Approved with status "Successful". */
@@ -11119,6 +11185,51 @@ const MOCK_AUTH={termsAccepted:false,kycUpdated:false,kycReview:false,wrongPass:
     return mockOtp(()=>{ const ch=['type','status','services','customAccounts','accounts','rules'].filter(k=>body[k]!==undefined&&JSON.stringify(body[k])!==JSON.stringify(w[k])); Object.assign(w,body,{name:w.name}); w.audit=[AU(mockNow(),'modified','Ahmed Hassan',ch)].concat(w.audit||[]); return done('WFL'); }); });
   MockServer.on('GET','/smb/approvals',({query})=>{ const q=query.queue||'mine', l=Q.filter(t=>t.queue===q).sort((a,b)=>(b.actionAt||b.pendingSince)>(a.actionAt||a.pendingSince)?1:-1);
     return {total:l.length,items:l.slice(0,20).map(t=>JSON.parse(JSON.stringify(t)))}; });
+  /* ---- downloads (UJ: Transaction management PDF / CSV, User management and Group dashboard Excel / CSV) ----
+     CSV in UTF-8 with a BOM (Arabic opens correctly in Excel); Excel as an HTML table (.xls); PDF in English (the mock PDF writer is Latin only) */
+  const csvFile=rows=>({__file:true,contentType:'text/csv;charset=utf-8',content:'﻿'+rows.map(r=>r.map(v=>`"${String(v==null?'':v).replace(/"/g,'""')}"`).join(',')).join('\r\n')});
+  const xlsFile=rows=>({__file:true,contentType:'application/vnd.ms-excel',content:['<html><head><meta charset="utf-8"></head><body><table>',...rows.map((r,i)=>`<tr>${r.map(v=>{ const t=String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;'); return i?`<td>${t}</td>`:`<th>${t}</th>`; }).join('')}</tr>`),'</table></body></html>'].join('')});
+  const EXL={en:{init:'Initiator name',debit:'Debit account number',type:'Transfer type',req:'Request type',accNo:'Account number',reqDate:'Request date',card:'Card number',tfDate:'Transfer date',bene:'Beneficiary name',biller:'Biller name',
+      amt:'Amount',ccy:'Currency',ref:'Transaction reference number',left:'Authorization left',since:'Pending since',appr:'Approved date',act:'Action date',status:'Transaction status',
+      uname:'User name',uid:'User ID',role:'User role',added:'Added on',ust:'Status',gname:'Group name',members:'Members',eff:'Effective date',
+      st:{approved:'Approved',successful:'Successful',rejected:'Rejected',expired:'Expired',recalled:'Recalled',active:'Active',locked:'Locked',blocked:'Blocked',blocked_permanently:'Blocked permanently',inactive:'Inactive'},
+      q:{mine:'My approvals',pending:'Pending approvals',approved:'Completed · Approved',closed:'Completed · Rejected, expired, recalled'}},
+    ar:{init:'اسم المُنشئ',debit:'رقم حساب الخصم',type:'نوع التحويل',req:'نوع الطلب',accNo:'رقم الحساب',reqDate:'تاريخ الطلب',card:'رقم البطاقة',tfDate:'تاريخ التحويل',bene:'اسم المستفيد',biller:'اسم الجهة المفوترة',
+      amt:'المبلغ',ccy:'العملة',ref:'الرقم المرجعي للمعاملة',left:'الاعتمادات المتبقية',since:'معلقة منذ',appr:'تاريخ الاعتماد',act:'تاريخ الإجراء',status:'حالة المعاملة',
+      uname:'اسم المستخدم',uid:'معرّف المستخدم',role:'الدور',added:'تاريخ الإضافة',ust:'الحالة',gname:'اسم المجموعة',members:'الأعضاء',eff:'تاريخ السريان',
+      st:{approved:'معتمدة',successful:'ناجحة',rejected:'مرفوضة',expired:'منتهية',recalled:'مسحوبة',active:'نشط',locked:'مقفل',blocked:'موقوف',blocked_permanently:'موقوف نهائيًا',inactive:'غير نشط'},
+      q:{mine:'اعتماداتي',pending:'بانتظار الاعتماد',approved:'المكتملة · المعتمدة',closed:'المكتملة · المرفوضة والمنتهية والمسحوبة'}}};
+  const exLang=q=>q.lang==='ar'?'ar':'en';
+  const modOf=t=>['accounts','cards','transfers','bene','payments','bulk'].includes(t.module)?t.module:'other';
+  MockServer.on('GET','/smb/approvals/export',({query})=>{ const q=query.queue||'mine', fmt=query.format==='csv'?'csv':'pdf', lg=fmt==='pdf'?'en':exLang(query), L=EXL[lg], s=String(query.q||'').trim().toLowerCase(), when=t=>String(t.actionAt||t.pendingSince||'').slice(0,10);
+    const l=Q.filter(t=>t.queue===q&&(!query.module||query.module==='all'||modOf(t)===query.module)&&(!query.service||t.service===query.service)&&(!query.from||when(t)>=query.from)&&(!query.to||when(t)<=query.to)
+      &&(!s||[t.reference,t.initiator,t.debitAccount,t.beneficiary,t.biller].filter(Boolean).join(' ').toLowerCase().includes(s))).sort((a,b)=>when(b)>when(a)?1:-1);
+    if(!l.length) throw mockErr(404,'NO_DATA');
+    const open=q==='mine'||q==='pending', mod=query.module&&query.module!=='all'?query.module:'all';
+    /* columns: the UJ grid for "All"; with a module selected, that module's fields (UJ Pending with Me AC 12–18, Pending with Others AC 12–18, Completed AC 17–23) */
+    const amt=t=>t.amount!=null?Number(t.amount).toFixed(2):'', ccy=t=>t.amount!=null?(t.currency||'EGP'):'', day=v=>String(v||'').slice(0,10), typ=t=>t.type?t.type[lg]:'';
+    const COLS={all:[[L.init,t=>t.initiator],[L.debit,t=>t.debitAccount||''],[L.type,typ],[L.amt,amt],[L.ccy,ccy],[L.ref,t=>t.reference]],
+      accounts:[[L.ref,t=>t.reference],[L.req,typ],[L.accNo,t=>t.debitAccount||''],[L.amt,amt],[L.ccy,ccy],[L.init,t=>t.initiator]],
+      cards:[[L.ref,t=>t.reference],[L.req,typ],[L.reqDate,t=>day((t.history&&t.history[0]&&t.history[0].at)||t.pendingSince)],[L.card,t=>t.cardNumber||''],[L.init,t=>t.initiator]],
+      transfers:[[L.ref,t=>t.reference],[L.type,typ],[L.amt,amt],[L.ccy,ccy],[L.tfDate,t=>t.transferDate||''],[L.debit,t=>t.debitAccount||''],[L.bene,t=>t.beneficiary||(t.donation?t.donation[lg]:'')],[L.init,t=>t.initiator]],
+      bene:[[L.ref,t=>t.reference],[L.type,typ],[L.bene,t=>t.beneficiary||''],[L.init,t=>t.initiator]],
+      payments:[[L.ref,t=>t.reference],[L.req,typ],[L.biller,t=>t.biller||''],[L.amt,amt],[L.ccy,ccy],[L.debit,t=>t.debitAccount||''],[L.init,t=>t.initiator]],
+      bulk:[[L.ref,t=>t.reference],[L.type,typ],[L.amt,amt],[L.ccy,ccy],[L.debit,t=>t.debitAccount||''],[L.init,t=>t.initiator]],
+      other:[[L.ref,t=>t.reference],[L.req,typ],[L.init,t=>t.initiator]]};
+    const tail=open?[[L.left,t=>t.authLeft],...(mod==='other'?[]:[[L.since,t=>t.amount!=null||mod!=='all'?day(t.pendingSince):'']])]:[[q==='approved'?L.appr:L.act,t=>day(t.actionAt)],[L.status,t=>L.st[t.status]||t.status]];
+    const cols=COLS[mod].concat(tail), head=cols.map(c=>c[0]), rows=l.map(t=>cols.map(c=>c[1](t)));
+    if(fmt==='csv') return csvFile([head,...rows]);
+    /* PDF: one block per transaction (label: value lines), so long rows fit the page */
+    return mockFile([`Faisal Islamic Bank of Egypt - ${L.q[q].replace(/ · /g,' - ')}${mod!=='all'?` - ${({accounts:'Accounts',cards:'Cards',transfers:'Transfers',bene:'Beneficiary',payments:'Payments',bulk:'Bulk payments',other:'Common requests'})[mod]}`:''}`,`Generated: ${mockNow().slice(0,16).replace('T',' ')}`,'',
+      ...rows.flatMap(r=>{ const pairs=head.map((h,k)=>[h,String(r[k]==null?'':r[k]).replace(/ · /g,' - ')]).filter(p=>p[1]!==''), out=[]; for(let k=0;k<pairs.length;k+=2) out.push(pairs.slice(k,k+2).map(p=>`${p[0]}: ${p[1]}`).join('   ')); return out.concat(''); })]); });
+  MockServer.on('GET','/smb/users/export',({query})=>{ const lg=exLang(query), L=EXL[lg], st=query.status||'all';
+    const l=USERS.filter(u=>u.addedBy===(query.addedBy||'me')&&(st==='all'||u.status===st)); if(!l.length) throw mockErr(404,'NO_DATA');
+    const rows=[[L.uname,L.uid,L.role,L.added,L.ust],...l.map(u=>{ const r=ROLES.find(x=>x.code===u.role); return [`${u.firstName} ${u.lastName}`,u.userId,r?r.name[lg]:u.role,u.addedOn,L.st[u.status]||u.status]; })];
+    return query.format==='csv'?csvFile(rows):xlsFile(rows); });
+  MockServer.on('GET','/smb/user-groups/export',({query})=>{ const lg=exLang(query), L=EXL[lg];
+    const l=GROUPS.filter(g=>g.addedBy===(query.addedBy||'me')); if(!l.length) throw mockErr(404,'NO_DATA');
+    const rows=[[L.gname,L.members,L.eff,L.ust],...l.map(g=>[g.name,g.users.length,g.effectiveDate,L.st[g.enabled?'active':'inactive']])];
+    return query.format==='csv'?csvFile(rows):xlsFile(rows); });
   MockServer.on('POST','/smb/approvals/{approvalId}/actions',({params,body})=>{ const t=Q.find(x=>x.id===params.approvalId); if(!t) throw mockErr(404,'NOT_FOUND');
     if(t.lockedBy&&body.action!=='recall') throw mockErr(409,'RECORD_IN_USE');
     if(body.action==='recall'&&!t.initiatedByMe) throw mockErr(403,'NOT_INITIATOR');
@@ -12008,6 +12119,9 @@ function showErrs(errs,scroll=true){
 ACTS['file-rm']=el=>{ const k=el.dataset.k, st=FS[S.flowKey]||(S.home&&S.home.doc); if(st){ st[k]=null; } render(); };
 
 /* ---------- sheet / drawer (bottom sheet on mobile, side drawer on web) ---------- */
+/* popups and drawers open with focus on the dialog itself, not on one of its actions: screen readers announce
+   the dialog, Tab moves to its first control, and no action shows a focus ring before the customer has touched anything */
+function focusDialog(el){ if(!el) return; el.setAttribute('tabindex','-1'); el.focus({preventScroll:true}); }
 function sheet(html,o={}){
   closeSheet();
   const back=document.createElement('div'); back.className='sheet-back'; back.id='sheetBack';
@@ -12017,7 +12131,7 @@ function sheet(html,o={}){
   back._prev=prev;
   (app.querySelector('.shell')||app).appendChild(back);
   requestAnimationFrame(()=>back.classList.add('on'));
-  setTimeout(()=>back.querySelector('button, [tabindex], input')?.focus({preventScroll:true}),60);
+  setTimeout(()=>focusDialog(back.querySelector('.sheet')),60);
   return back.querySelector('.sheet');
 }
 function closeSheet(){ const b=app.querySelector('#sheetBack'); if(!b) return; const p=b._prev; b.remove(); p&&p.focus&&document.body.contains(p)&&p.focus({preventScroll:true}); }
@@ -12330,7 +12444,7 @@ function modal(title,body,acts,o={}){
   const onKey=e=>{ if(!document.contains(back)){ document.removeEventListener('keydown',onKey,true); return; } if(e.key==='Escape'){ e.stopPropagation(); if(!o.locked) close(); } if(e.key==='Tab'){ const f=[...back.querySelectorAll('button')]; const i=f.indexOf(document.activeElement); if(e.shiftKey&&i<=0){ e.preventDefault(); f[f.length-1].focus(); } else if(!e.shiftKey&&i===f.length-1){ e.preventDefault(); f[0].focus(); } } };
   back.addEventListener('click',e=>{ const b=e.target.closest('[data-mi]'); if(b){ e.stopPropagation(); const x=acts[+b.dataset.mi]; if(!x.keep) close(); x.then&&x.then(); } else if(e.target===back&&!o.locked) close(); });
   document.addEventListener('keydown',onKey,true);
-  (app.querySelector('.auth')||app).appendChild(back); requestAnimationFrame(()=>back.classList.add('on')); back.querySelector('[data-mi]')?.focus();
+  (app.querySelector('.auth')||app).appendChild(back); requestAnimationFrame(()=>back.classList.add('on')); focusDialog(back.querySelector('.modal'));
   return back;
 }
 const M={
@@ -15827,7 +15941,7 @@ function logoutWithFeedback(){ const end=()=>{ Session.end('logout'); go('/'); }
   b.querySelector('[data-fb="skip"]').addEventListener('click',()=>{ b.remove(); end(); });
   ok.addEventListener('click',async()=>{ busy(ok,true); try{ await Api.feedback.submit({},{rating:rate||undefined,remarks:ta.value.trim()||undefined,context:'logout'}); toast(x.thanks); }catch(e){} b.remove(); end(); });
   b.addEventListener('keydown',e=>{ if(e.key==='Escape'){ b.remove(); end(); } });
-  paint(); stars[0].focus(); }
+  paint(); focusDialog(b.querySelector('.modal')); }
 
 Object.assign(ROUTES,{
   '/service-requests':{view:vSrList,wire:wireSrList,title:()=>sqx().title,needs:SR_NEEDS},
@@ -16996,8 +17110,12 @@ function vLoginFs(){ const L=au().login, x=lgx();
   /* passcode turned off (limit reached): biometrics stays as a full-width "Log in with biometrics" button, never an orphaned icon */
   const pcHidden=LG.pcOff&&!pc;
   const bioBtn=!lgBioOn()?'':pcHidden?`<button type="button" class="btn ghost" data-act="lg-bio">${ico('faceid')}${x.withBio}</button>`:`<button type="button" class="btn ghost lg-bio" data-act="lg-bio" aria-label="${x.bio}">${ico('faceid')}</button>`;
-  /* first-time user: no Use passcode / biometric actions (nothing is set up yet) and no register / open-account links (already a customer) */
-  const alt=first?'':existing?`<div class="lg-alt">${bioBtn}${pcHidden?'':`<button type="button" class="btn ghost" data-act="lg-pw">${pc?x.usePw:x.usePc}</button>`}</div>`
+  /* mPIN screen (existing user): biometric + Use password. User ID / password screen: no Use mPIN / biometric actions
+     (it is the first-time user's screen; quick login starts from the first screen), except Log in with biometrics once the
+     mPIN is turned off after 3 wrong attempts (UJ Login with MPIN, AC 9). A first-time user (just registered) also gets no
+     register / open-account links (already a customer). */
+  const alt=first?'':existing&&pc?`<div class="lg-alt">${bioBtn}<button type="button" class="btn ghost" data-act="lg-pw">${x.usePw}</button></div>`
+    :existing&&pcHidden&&bioBtn?`<div class="lg-alt">${bioBtn}</div>`
     :`<p class="ob-alt"><span class="muted">${au().login.firstTime}</span> <button class="link" type="button" data-go="/register">${au().login.register}</button></p><p class="ob-alt"><span class="muted">${x.newTo}</span> <button class="link" type="button" data-go="/onboarding">${x.create}</button></p>`;
   /* UJ Login with passcode: Login button, enabled only once the 4 digits are entered; Reset passcode right under the boxes */
   /* mobile login (password and passcode): title "Log in to your account" only — no Welcome title, no subtitle */
@@ -17128,7 +17246,7 @@ function tourShow(){ if(tourI<0) return; const x=tourx(), [,sel]=TOUR[tourI], st
   app.querySelectorAll('.tour-hl').forEach(e=>e.classList.remove('tour-hl')); const tgt=sel.split(',').map(z=>app.querySelector(z.trim())).find(Boolean); if(tgt){ tgt.classList.add('tour-hl'); tgt.scrollIntoView({block:'center',behavior:'auto'}); }
   app.querySelector('.tour-pop')?.remove(); const p=document.createElement('div'); p.className='tour-pop'; p.setAttribute('role','dialog'); p.setAttribute('aria-labelledby','tourT'); p.setAttribute('aria-describedby','tourB');
   setHTML(p,`<small class="muted">${fill(x.step,{n:dg(tourI+1),t:dg(TOUR.length)})}</small><h2 id="tourT">${st[0]}</h2><p id="tourB">${st[1]}</p><div class="tour-acts"><button class="link" data-tour="skip">${x.skip}</button><span></span>${tourI?`<button class="btn ghost sm" data-tour="back">${x.back}</button>`:''}<button class="btn primary sm" data-tour="next">${tourI===TOUR.length-1?x.finish:x.next}</button></div>`);
-  app.appendChild(p); p.querySelector('[data-tour="next"]').focus();
+  app.appendChild(p); focusDialog(p);
   p.addEventListener('click',e=>{ const b=e.target.closest('[data-tour]'); if(!b) return; const k=b.dataset.tour; if(k==='skip') tourEnd(false); else if(k==='back') tourGo(tourI-1); else tourGo(tourI+1); });
   p.addEventListener('keydown',e=>{ if(e.key==='Escape') tourEnd(false); }); }
 
@@ -17152,6 +17270,19 @@ const smbBadge=s=>badge(sx().st[s]||s,{active:'ok',locked:'pend',blocked:'err',b
 const smbAddBtn=(act,pre='')=>`<div class="tools smb-tools">${pre}<button class="btn primary sm" data-act="${act}">${ico('plus','sm')}${sx().add}</button></div>`;
 /* filter: a round icon button (label for screen readers; a dot when a filter is applied) */
 const smbFilterBtn=(act,on)=>`<button type="button" class="btn ghost smb-fbtn ${on?'is-on':''}" data-act="${act}" aria-label="${sx().filter}" title="${sx().filter}">${ico('filter','sm')}${on?'<span class="dot-b" aria-hidden="true"></span>':''}</button>`;
+/* download: a round icon button next to the filter; a menu offers the two file formats from the UJ (shown only when the list has rows) */
+const smbDlBtn=kind=>`<button type="button" class="btn ghost smb-fbtn" data-act="smb-dl" data-kind="${kind}" aria-haspopup="menu" aria-label="${sx().exp.dl}" title="${sx().exp.dl}">${ico('download','sm')}</button>`;
+const SMB_DL={tx:['pdf','csv'],users:['excel','csv'],groups:['excel','csv']};
+ACTS['smb-dl']=el=>{ if(POP&&POP.key==='smbdl'){ closePop(true); return; } const e=sx().exp, k=el.dataset.kind;
+  const p=openPop(el,SMB_DL[k].map(f=>`<button class="mf-item" data-v="${f}">${ico(f==='csv'?'list':'doc','sm')}<span>${e[f]}</span></button>`).join(''),{cls:'more-fly',label:e.dl,key:'smbdl'});
+  p.addEventListener('click',ev=>{ const b=ev.target.closest('[data-v]'); if(!b) return; ev.preventDefault(); ev.stopPropagation(); closePop(); smbDownload(k,b.dataset.v); }); p.querySelector('button')?.focus(); };
+async function smbDownload(k,fmt){ const ext={pdf:'pdf',csv:'csv',excel:'xls'}[fmt], day=TODAY_ISO;
+  try{ let blob, name;
+    if(k==='tx'){ const q=SMB_QK(); blob=await Api.smb.approvalsExport({queue:q,module:SM.qmod,from:SM.qf.from,to:SM.qf.to,service:SM.qf.service,q:SM.qq.trim(),format:fmt,lang:S.lang}); name=`Transaction-management-${q}-${day}`; }
+    else if(k==='users'){ blob=await Api.smb.usersExport({addedBy:SM.uby,status:SM.ust,format:fmt,lang:S.lang}); name=`Users-${day}`; }
+    else { blob=await Api.smb.groupsExport({addedBy:SM.gby,format:fmt,lang:S.lang}); name=`User-groups-${day}`; }
+    saveBlob(`${name}.${ext}`,blob); }
+  catch(err){ toast(err.code==='NO_DATA'?sx().exp.none:errMsg(err)); } }
 const smbKebab=(kind,id,name)=>`<button type="button" class="icon-btn plain smb-keb" data-act="smb-kebab" data-kind="${kind}" data-id="${esc(id)}" aria-haspopup="menu" aria-label="${fill(sx().actions,{n:esc(name)})}">${ico('dots','sm')}</button>`;
 const smbSvc=code=>{ for(const m of SMB.modules){ const s=m.services.find(x=>x.code===code); if(s) return s; } return null; };
 const smbSvcName=code=>{ const s=smbSvc(code); return s?esc(L2(s.name)):esc(code); };
@@ -17190,14 +17321,14 @@ function vSmbUsers(){ const x=sx(), m=x.um;
     const body=`${fNote('',g.info)}${smbBy(SM.gby,'smb-gby',{me:all.filter(z=>z.addedBy==='me').length,others:all.filter(z=>z.addedBy==='others').length})}
       <p class="muted small smb-count">${fill(g.nGroups,{n:dg(list.length)})}</p>
       ${list.length?`<ul class="smb-list">${list.map(gr=>`<li class="smb-card"><button class="smb-main" data-act="smb-gview" data-id="${gr.id}"><span class="av ic">${ico('users','sm')}</span><span class="smb-t"><b>${esc(gr.name)}</b><small>${fill(g.members,{n:dg(gr.users.length)})} · ${fill(g.eff,{d:dShort(gr.effectiveDate)})}</small></span>${smbBadge(gr.enabled?'active':'inactive')}</button>${smbKebab('group',gr.id,gr.name)}</li>`).join('')}</ul>`:emptyB('users',g.none)}`;
-    return smbPage('/smb/users',m.title,`${top}${panelX(m.tabs.groups,body,'','','',smbAddBtn('smb-gadd'))}`);
+    return smbPage('/smb/users',m.title,`${top}${panelX(m.tabs.groups,body,'','','',smbAddBtn('smb-gadd',list.length?smbDlBtn('groups'):''))}`);
   }
   const all=SMB_USERS, mine=all.filter(u=>u.addedBy===SM.uby), list=mine.filter(u=>SM.ust==='all'||u.status===SM.ust);
   const body=`${fNote('',m.info)}${smbBy(SM.uby,'smb-uby',{me:all.filter(u=>u.addedBy==='me').length,others:all.filter(u=>u.addedBy==='others').length})}
     <p class="muted small smb-count">${fill(m.nUsers,{n:dg(list.length)})}${SM.ust!=='all'?` · ${x.st[SM.ust]}`:''}</p>
     ${list.length?`<ul class="smb-list">${list.map(u=>`<li class="smb-card"><button class="smb-main" data-act="smb-uview" data-id="${u.id}">${avatar(`${u.firstName} ${u.lastName}`)}<span class="smb-t"><b>${smbUName(u)}</b><small>${esc(L2(smbRole(u.role).name))} · ${fill(m.addedOn,{d:dShort(u.addedOn)})}</small></span>${smbBadge(u.status)}</button>${smbKebab('user',u.id,`${u.firstName} ${u.lastName}`)}</li>`).join('')}</ul>`
       :emptyB('users',SM.ust!=='all'&&mine.length?m.noneFilter:SM.uby==='others'?m.noneOthers:m.none)}`;
-  return smbPage('/smb/users',m.title,`${top}${panelX(m.tabs.users,body,'','','',smbAddBtn('smb-uadd',smbFilterBtn('smb-ufilter',SM.ust!=='all')))}`);
+  return smbPage('/smb/users',m.title,`${top}${panelX(m.tabs.users,body,'','','',smbAddBtn('smb-uadd',`${smbFilterBtn('smb-ufilter',SM.ust!=='all')}${list.length?smbDlBtn('users'):''}`))}`);
 }
 ACTS['smb-utab']=el=>{ SM.utab=el.dataset.v; render(); };
 ACTS['smb-uby']=el=>{ SM.uby=el.dataset.v; render(); };
@@ -17582,12 +17713,24 @@ function vSmbTx(){ const x=sx(), m=x.tm, q=SMB_QK(), list=smbQList(q), done=SM.q
   const tabs=tabsR([['mine',`${m.tabs.mine} ${cntB(SMB_QT.mine,SMB_QT.mine>0)}`],['pending',`${m.tabs.pending} ${cntB(SMB_QT.pending)}`],['done',`${m.tabs.done} ${cntB(SMB_QT.approved+SMB_QT.closed)}`]],SM.qtab,'smb-qtab','smb-top');
   const sub=done?tabsR([['approved',`${m.sub.approved} ${cntB(SMB_QT.approved)}`],['closed',`${m.sub.closed} ${cntB(SMB_QT.closed)}`]],SM.qsub,'smb-qsub'):'';
   const fOn=!!(SM.qf.from||SM.qf.to||SM.qf.service);
-  const mods=`<div class="smb-mods" role="group" aria-label="${m.module}">${SMB_MODS.map(k=>`<button type="button" class="chip-b ${SM.qmod===k?'on':''}" aria-pressed="${SM.qmod===k}" data-act="smb-qmod" data-v="${k}">${m.mods[k]}</button>`).join('')}</div>`;
+  /* module filter (UJ Pending with Me AC 14, Pending with Others AC 13, Completed AC 16) as chips: narrows the list to one module, and the rows
+     show that module's fields (AC 12–18 / 17–23); "All" keeps the grid fields of AC 8 / 7 / 10 */
+  const mod=SM.qmod, F=m.f, open=q==='mine'||q==='pending';
+  const mods=`<div class="smb-mods" role="group" aria-label="${m.module}">${SMB_MODS.map(k=>`<button type="button" class="chip-b ${mod===k?'on':''}" aria-pressed="${mod===k}" data-act="smb-qmod" data-v="${k}">${m.mods[k]}</button>`).join('')}</div>`;
+  const ref=t=>`<span class="ltr">${esc(t.reference)}</span>`, acct=v=>`<span class="ltr">${dg(esc(v))}</span>`, lv=(l,v)=>`${l} ${v}`;
+  const smbBene=t=>{ if(t.beneficiary) return t.beneficiary; const d=(t.details||[]).find(z=>z.key==='donation'); return d?L2(d.value):''; };   /* a donation's charity is its beneficiary */
+  const reqDay=t=>((t.history&&t.history[0]&&t.history[0].at)||t.pendingSince||'').slice(0,10);
+  const tail=t=>open?[lv(m.authLeft,dg(t.authLeft)),...(mod==='other'||(mod==='all'&&t.amount==null)?[]:[lv(m.since,dShort(t.pendingSince.slice(0,10)))])]:[lv(m.actionDate[q],dShort((t.actionAt||'').slice(0,10)))];
+  const line1=t=>({all:[esc(t.initiator),ref(t)],accounts:[ref(t),t.debitAccount?lv(F.acc,acct(t.debitAccount)):''],cards:[ref(t),t.cardNumber?lv(F.card,acct(t.cardNumber)):'',lv(F.reqDate,dShort(reqDay(t)))],
+    transfers:[ref(t),smbBene(t)?lv(F.bene,esc(smbBene(t))):'',t.transferDate?lv(F.tfDate,dShort(t.transferDate)):''],bene:[ref(t),t.beneficiary?lv(F.bene,esc(t.beneficiary)):''],
+    payments:[ref(t),t.biller?lv(F.biller,esc(t.biller)):''],bulk:[ref(t)],other:[ref(t)]})[mod];
+  const line2=t=>[['all','transfers','payments','bulk'].includes(mod)&&t.debitAccount?acct(t.debitAccount):'',mod!=='all'?lv(F.init,esc(t.initiator)):'',...tail(t)];
+  const withAmt=['all','accounts','transfers','payments','bulk'].includes(mod);
   const row=t=>lrow({open:`data-act="smb-qopen" data-id="${t.id}"`,lead:`<span class="ic">${ico(smbQIcon(t),'sm')}</span>`,title:`${esc(L2(t.type))}`,
-    meta:[`${esc(t.initiator)} · <span class="ltr">${esc(t.reference)}</span>`,[t.debitAccount?`<span class="ltr">${dg(esc(t.debitAccount))}</span>`:'',q==='mine'||q==='pending'?`${m.authLeft} ${dg(t.authLeft)}${t.amount!=null?` · ${m.since} ${dShort(t.pendingSince.slice(0,10))}`:''}`:`${m.actionDate[q]} ${dShort((t.actionAt||'').slice(0,10))}`].filter(Boolean).join(' · ')],
-    tags:t.lockedBy?badge(x.st.inProgress,'pend'):q==='approved'||q==='closed'?badge(m.sts[t.status],t.status==='approved'||t.status==='successful'?'ok':'err'):'',amt:t.amount!=null?money(-t.amount,t.currency||'EGP'):'',chev:true});
+    meta:[line1(t).filter(Boolean).join(' · '),line2(t).filter(Boolean).join(' · ')],
+    tags:t.lockedBy?badge(x.st.inProgress,'pend'):q==='approved'||q==='closed'?badge(m.sts[t.status],t.status==='approved'||t.status==='successful'?'ok':'err'):'',amt:withAmt&&t.amount!=null?money(-t.amount,t.currency||'EGP'):'',chev:true,cls:'smb-txr'});
   const empty=q==='mine'&&!SMB_Q.mine.length?m.noneMine:SMB_Q[q].length?m.noneFilter:m.none;
-  const body=`${tabs}${sub}<div class="smb-qbar"><div class="input search-in">${ico('search','sm')}<input type="search" id="smbQq" value="${esc(SM.qq)}" placeholder="${m.searchPh}" aria-label="${m.searchPh}"></div>${smbFilterBtn('smb-qfilter',fOn)}</div>${mods}
+  const body=`${tabs}${sub}<div class="smb-qbar"><div class="input search-in">${ico('search','sm')}<input type="search" id="smbQq" value="${esc(SM.qq)}" placeholder="${m.searchPh}" aria-label="${m.searchPh}"></div>${smbFilterBtn('smb-qfilter',fOn)}${list.length?smbDlBtn('tx'):''}</div>${mods}
     <p class="muted small smb-count">${fill(m.count,{n:dg(list.length)})}</p>${list.length?`<ul class="lrows">${list.map(row).join('')}</ul>`:emptyB('tracker',empty)}`;
   return smbPage('/smb/transactions',m.title,panelX(m.title,body)); }
 function wireSmbTx(){ const i=app.querySelector('#smbQq'); if(!i) return; i.addEventListener('input',()=>{ SM.qq=i.value; const p=i.selectionStart; render(); const n=app.querySelector('#smbQq'); if(n){ n.focus(); n.setSelectionRange(p,p); } }); }
@@ -17612,7 +17755,8 @@ registerFlow('smbtx',{base:'/smb/transactions/detail',home:'/smb/transactions',n
       ...t.details.map(d=>[m.fields[d.key]||d.key,d.key==='date'?dShort(d.value):d.key==='file'?`<span class="file-chip sm">${ico('doc','sm')}<span class="fn">${esc(d.value)}</span></span>`:esc(d.value&&typeof d.value==='object'?L2(d.value):d.value)])];
     const add=f.queue==='mine'||f.queue==='pending'?[[m.authRem,dg(t.authLeft)],...(t.amount!=null?[[m.expiry,fill(m.expiryV,{n:dg(t.expiresInDays)})]]:[]),[m.status,t.lockedBy?badge(sx().st.inProgress,'pend'):badge(m.sts.pending,'pend')]]
       :[[m.status,badge(m.sts[t.status],t.status==='approved'||t.status==='successful'?'ok':'err')],[m.actionDate[f.queue],dShort((t.actionAt||'').slice(0,10))]];
-    const hist=`<h3 class="smb-h3">${m.history}</h3><div class="tbl-x"><table class="fx smb-hist"><thead><tr><th scope="col">${sx().ref}</th><th scope="col">${m.hAt}</th><th scope="col">${m.hAction}</th><th scope="col">${m.hStage}</th><th scope="col">${m.hBy}</th></tr></thead><tbody>${t.history.map(h=>`<tr><td class="ltr">${esc(h.reference)}</td><td>${stamp(h.at)}</td><td>${m.actions[h.action]||esc(h.action)}</td><td>${m.stages[h.stage]||esc(h.stage)}</td><td>${esc(h.by)}</td></tr>`).join('')}</tbody></table></div>`;
+    /* workflow history (UJ AC 21): a timeline, newest step last — action, stage · action by, date and time · reference */
+    const hist=`<h3 class="smb-h3">${m.history}</h3><ol class="sr-steps smb-hist">${t.history.map(h=>`<li class="done ${['rejected','recalled','expired'].includes(h.action)?'neg':''}"><span class="dot" aria-hidden="true">${ico(['rejected','recalled','expired'].includes(h.action)?'x':'check','sm')}</span><span><b>${m.actions[h.action]||esc(h.action)}</b><small>${m.stages[h.stage]||esc(h.stage)} · ${esc(h.by)}</small><small>${stamp(h.at)} · <span class="ltr">${esc(h.reference)}</span></small></span></li>`).join('')}</ol>`;
     const act=smbTxAct(f,t);
     return `${t.lockedBy&&f.queue==='mine'?fNote('',fill(m.locked,{n:esc(t.lockedBy)}),'gold'):''}${rowsHTML(det)}${hist}<h3 class="smb-h3">${m.status}</h3>${rowsHTML(add)}
       ${act.length?fld('remarks',m.remarks,1,fArea('remarks',f.remarks,m.remarksPh,150)):''}${f.queue==='pending'&&!t.initiatedByMe?`<p class="help">${m.recallOnly}</p>`:''}`; },
