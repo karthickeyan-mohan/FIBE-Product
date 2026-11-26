@@ -71,6 +71,18 @@
 })();
 
 </script>
+<script>/* js/core/ios-viewport.js */
+/* iPhone / iPad: Safari zooms the page into any field whose text is under 16px (the search fields are 14px).
+   maximum-scale=1 stops that focus zoom; iOS still lets people pinch-zoom (it ignores the limit for pinch since iOS 10).
+   Applied on iOS only, so pinch-zoom on Android and desktop is untouched. */
+(function(){
+  var ua=navigator.userAgent||'', ios=/iP(hone|ad|od)/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1);
+  if(!ios) return;
+  var v=document.querySelector('meta[name="viewport"]');
+  if(v&&!/maximum-scale/.test(v.content)) v.setAttribute('content',v.content+', maximum-scale=1');
+})();
+
+</script>
 <!-- Content-Security-Policy: tighten connect-src to the API host(s) per environment. Also send
      frame-ancestors 'none' + X-Frame-Options: DENY as HTTP headers (they don't work in a meta tag).
      Inline style ATTRIBUTES are used for animation indexes (style="--i:2"), hence 'unsafe-inline' for styles only. -->
@@ -796,7 +808,7 @@ body{font-family:"IBM Plex Sans Arabic","Noto Sans Arabic",system-ui,-apple-syst
 @media (prefers-reduced-motion: reduce){.bar > span, .seg-bar > span, .pips i{transition:none !important}}
 .ph{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:var(--space-16)}
 @container app (min-width: 700px){.toast{bottom:28px}}
-.btn{position:relative;isolation:isolate;height:44px;padding-inline:var(--space-16);border-radius:var(--radius-full);display:inline-flex;align-items:center;justify-content:center;gap:var(--space-8);font-weight:600;border:1px solid transparent;cursor:pointer;white-space:nowrap;text-decoration:none;-webkit-tap-highlight-color:transparent;outline:transparent solid 2px;outline-offset:0px;transition:background-color .2s cubic-bezier(.2,.7,.2,1), border-color .2s cubic-bezier(.2,.7,.2,1), color .2s cubic-bezier(.2,.7,.2,1), transform .16s cubic-bezier(.2,.7,.2,1), outline-offset .16s cubic-bezier(.2,.7,.2,1), outline-color .16s cubic-bezier(.2,.7,.2,1)}
+.btn{position:relative;isolation:isolate;height:48px;padding-inline:var(--space-16);border-radius:var(--radius-full);display:inline-flex;align-items:center;justify-content:center;gap:var(--space-8);font-weight:600;border:1px solid transparent;cursor:pointer;white-space:nowrap;text-decoration:none;-webkit-tap-highlight-color:transparent;outline:transparent solid 2px;outline-offset:0px;transition:background-color .2s cubic-bezier(.2,.7,.2,1), border-color .2s cubic-bezier(.2,.7,.2,1), color .2s cubic-bezier(.2,.7,.2,1), transform .16s cubic-bezier(.2,.7,.2,1), outline-offset .16s cubic-bezier(.2,.7,.2,1), outline-color .16s cubic-bezier(.2,.7,.2,1)}
 .fibe:where([data-mode="dark"]) .btn{border:1px solid transparent;text-decoration:none;outline:transparent solid 2px}
 .btn.sm{height:38px;padding-inline:var(--space-16);font-size:0.8125rem;line-height:1.25rem}
 .btn.xs{height:30px;padding-inline:var(--space-12);font-size:0.75rem;gap:var(--space-8);line-height:1.125rem}
@@ -1308,7 +1320,7 @@ body{font-family:"IBM Plex Sans Arabic","Noto Sans Arabic",system-ui,-apple-syst
 .modal h2{margin:0; font-size:1.125rem; font-weight:600; line-height:1.625rem}
 .modal p{margin:0; color:var(--text-2)}
 .modal .acts{display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-top:8px}
-.modal .acts .btn{height:42px}
+.modal .acts .btn{height:48px}
 
 /* landing */
 .landing{display:flex; flex-direction:column; gap:32px}
@@ -4410,13 +4422,13 @@ html.kb-open .app .shell.has-dock .fp-foot.docked{position:sticky}
   .app .auth:is(.lg-pcs,.otp-scr) .auth-body .alert{text-align:start}
 }
 .app .lg-pc .lg-fpc{margin:0; text-align:center; font-size:0.875rem; line-height:1.375rem}
-/* pre-login buttons one size smaller: the design system's default 44px button (14px label) instead of 52 / 56px —
+/* pre-login buttons: the design system's default 48px button (14px label) —
    first screen, docked actions (Log in, Continue, Submit …), passcode / biometric row; the OTP timer row matches */
-.app .auth .landing .btn,.app .auth .auth-cta .btn,.app .auth.lg2 .landing .btn{height:44px; min-height:44px; padding-block:0; font-size:0.875rem; line-height:1.375rem}
-@container app (max-width: 899px){ .app .auth.lg2 .landing .btn{height:auto; min-height:44px; padding-block:10px} }   /* long labels may still wrap inside the pill */
-.app .auth .lg-alt .lg-bio{flex:0 0 44px; width:44px}
+.app .auth .landing .btn,.app .auth .auth-cta .btn,.app .auth.lg2 .landing .btn{height:48px; min-height:48px; padding-block:0; font-size:0.875rem; line-height:1.375rem}
+@container app (max-width: 899px){ .app .auth.lg2 .landing .btn{height:auto; min-height:48px; padding-block:12px} }   /* long labels may still wrap inside the pill */
+.app .auth .lg-alt .lg-bio{flex:0 0 48px; width:48px}
 .app .auth .landing .btn .i,.app .auth .auth-cta .btn .i{width:18px; height:18px}
-.app .otp-dock .otp-meta{min-height:44px}
+.app .otp-dock .otp-meta{min-height:48px}
 .app .auth .lg-opts{gap:16px}   /* same spacing as between Log in and Register */
 /* code / PIN boxes in error: just the red stroke — no extra light-red ring around the focused box */
 .app .otp.is-err input:focus,.app[data-mode] .otp.is-err input:focus{box-shadow:none}
