@@ -20,9 +20,10 @@
    Dark theme: translucent status bar (white text) with the page running underneath, so backgrounds and the
    landing gradient continue behind it (screens add the inset via --sat in css/flows.css).
    Light theme: the standard status bar (dark text), as white text would not show on the light screens.
-   iOS paints that standard bar with the page background, so the page background (and theme-color) follow
-   the colour at the top of the screen showing: white on the log-in steps, grey on the app, the green tint
-   on the first screen, dimmed while a drawer or popup is open. */
+   iOS paints that standard bar from the full-width fixed element at the top edge — here #app (position:fixed,
+   inset 0) — falling back to the page background. So #app's background, the page background and theme-color all
+   follow the colour at the top of the screen showing: white on the log-in steps, grey in the app, the green tint
+   along the top of the first screen. Drawer / popup scrims are left out (they would tint the page under them). */
 (function(){
   var dark=false;
   try{ var s=JSON.parse(localStorage.getItem('fibe-prefs-v1')||'{}')||{};
@@ -41,20 +42,24 @@
     return null; }
   function topColour(){
     var app=document.getElementById('app'); if(!app||!document.elementsFromPoint) return null;
+    var own=app.style.backgroundColor; app.style.backgroundColor='';   /* read #app's own token colour, not the one set last time */
     var y=1, els=document.elementsFromPoint(innerWidth/2,y), layers=[], i, el, cs, c, tint;
     for(i=0;i<els.length;i++){ el=els[i]; if(el===document.body||el===document.documentElement) break;
+      if(el.classList&&(el.classList.contains('modal-back')||el.classList.contains('sheet-back')||el.classList.contains('srch-back'))) continue;
       cs=getComputedStyle(el);
       tint=rgba(cs.getPropertyValue('--top-tint').trim());   /* a gradient at the top (first screen): its colour along the top edge */
       if(tint){ layers.push(tint); break; }
       c=rgba(cs.backgroundColor); if(!c||!c[3]) { if(el===app) break; continue; }
       c[3]*=parseFloat(cs.opacity)||0; if(!c[3]) continue;
       layers.push(c); if(c[3]>=1) break; if(el===app) break; }
+    app.style.backgroundColor=own;
     if(!layers.length) return null;
     var base=layers.pop(), out=[base[0],base[1],base[2]];
     while(layers.length){ c=layers.pop(); out=[0,1,2].map(function(k){ return out[k]*(1-c[3])+c[k]*c[3]; }); }
     return 'rgb('+out.map(Math.round).join(',')+')'; }
   var tc=[].slice.call(document.querySelectorAll('meta[name="theme-color"]')), last='', raf=0, late=0;
   function apply(){ raf=0; var c=topColour(); if(!c||c===last) return; last=c;
+    var app=document.getElementById('app'); if(app) app.style.backgroundColor=c;
     document.documentElement.style.backgroundColor=c; document.body&&(document.body.style.backgroundColor=c);
     tc.forEach(function(t){ t.setAttribute('content',c); }); }
   function schedule(){ if(!raf) raf=requestAnimationFrame(apply); clearTimeout(late); late=setTimeout(apply,400); }   /* again once fades / slides have finished */
@@ -17110,12 +17115,11 @@ function vLoginFs(){ const L=au().login, x=lgx();
   /* passcode turned off (limit reached): biometrics stays as a full-width "Log in with biometrics" button, never an orphaned icon */
   const pcHidden=LG.pcOff&&!pc;
   const bioBtn=!lgBioOn()?'':pcHidden?`<button type="button" class="btn ghost" data-act="lg-bio">${ico('faceid')}${x.withBio}</button>`:`<button type="button" class="btn ghost lg-bio" data-act="lg-bio" aria-label="${x.bio}">${ico('faceid')}</button>`;
-  /* mPIN screen (existing user): biometric + Use password. User ID / password screen: no Use mPIN / biometric actions
-     (it is the first-time user's screen; quick login starts from the first screen), except Log in with biometrics once the
-     mPIN is turned off after 3 wrong attempts (UJ Login with MPIN, AC 9). A first-time user (just registered) also gets no
-     register / open-account links (already a customer). */
-  const alt=first?'':existing&&pc?`<div class="lg-alt">${bioBtn}<button type="button" class="btn ghost" data-act="lg-pw">${x.usePw}</button></div>`
-    :existing&&pcHidden&&bioBtn?`<div class="lg-alt">${bioBtn}</div>`
+  /* existing user (has logged in on this device and set up quick login): biometric + Use password on the mPIN screen,
+     biometric + Use mPIN on the User ID / password screen. First-time user (first login on this device: nothing set up yet,
+     or just registered): User ID / password only — no Use mPIN / biometric; a just-registered user also gets no register /
+     open-account links (already a customer). */
+  const alt=first?'':existing?`<div class="lg-alt">${bioBtn}${pcHidden?'':`<button type="button" class="btn ghost" data-act="lg-pw">${pc?x.usePw:x.usePc}</button>`}</div>`
     :`<p class="ob-alt"><span class="muted">${au().login.firstTime}</span> <button class="link" type="button" data-go="/register">${au().login.register}</button></p><p class="ob-alt"><span class="muted">${x.newTo}</span> <button class="link" type="button" data-go="/onboarding">${x.create}</button></p>`;
   /* UJ Login with passcode: Login button, enabled only once the 4 digits are entered; Reset passcode right under the boxes */
   /* mobile login (password and passcode): title "Log in to your account" only — no Welcome title, no subtitle */
